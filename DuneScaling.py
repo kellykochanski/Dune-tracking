@@ -12,7 +12,8 @@ is borrowed from Kelly's code.
 - MY 2/8/2018
 """
 
-fname = 'E:/Boulder_Snow/Tracker/170122AA_Points/170122AA_full.csv'
+# Input file stored in same folder.
+fname = '170122AA_full.csv' 
 
 
 class Dune:
