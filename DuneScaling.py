@@ -1,3 +1,11 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Apr  9 13:58:08 2018
+
+@author: Chelsea
+"""
+
 from matplotlib import pyplot as plt
 import csv
 import numpy as np
@@ -20,7 +28,6 @@ class Dune:
     and one on the dwend.
     These points are defined for each point in time as the dune moves
     across Niwot Ridge.
-
     To use:
     #Create a dune:
     >> new_dune = Dune(name)
@@ -68,7 +75,6 @@ class Dune:
     
     def combine_points(self):
         
-        print "Combining points!" 
         self.feet   = self.feet.sort_values('Step')
         self.crests = self.crests.sort_values('Step')
         self.dwends = self.dwends.sort_values('Step')
@@ -84,7 +90,6 @@ class Dune:
         # Drop all steps/objects which are missing a crest, foot, or dwend
         self.position = self.position.dropna()
         
-        print "Dune position df : "
         print self.position
 
 class Parameters:
@@ -95,10 +100,10 @@ class Parameters:
         # Convert steps of tracker time to seconds of real time
         self.steps2s = float('nan')
         # Will we save?
-        params.saving_on = False
+        self.saving_on = False
         # Using a test data set?
-        params.istest    = False
-        params.fname     = "NaN"        
+        self.istest    = False
+        self.fname     = "NaN"        
     def __repr__(self):
         return("Parameter vector for test")
 
@@ -137,10 +142,6 @@ def add_and_finalize(dunes, name, step, crest, foot, dwend):
         new_dune.add_position(step, crest, foot, dwend)
         dunes[name] = new_dune
     return dunes
-
-
-
-
 
 
 def clear_group(group, current):
@@ -215,7 +216,6 @@ def read_data_Chelsea(fname):
         datareader = csv.reader(datafile, dialect='excel')
         for line in islice(datareader, 0, None):
             currentline = line[:]
-            print "reading line: " + str(currentline)
             firstitem = currentline[0]
             # If line is a single string starting with D, it's a name line
             # for a new dune
@@ -263,8 +263,7 @@ def read_data_Chelsea(fname):
             dune.combine_points()
             complete_dunes[dunenumber] = dune
     
-    return complete_dunes
-                
+    return complete_dunes               
     
 
 def add_point_from_chelsea_csv(incomplete_dunes, dunenumber, 
@@ -318,44 +317,75 @@ def turn_pos_into_xy(pos_df, key):
     xvec = np.zeros(len(pos_df))
     yvec = np.zeros(len(pos_df))
     for i, item in enumerate(pos_df[key]):
-        print 'ITEM: ' + str(item) + ('printed in turn_pos_into_xy')
         (x,y) = item
         xvec[i] = x
         yvec[i] = y
     return (xvec, yvec)
-        
 
+def perspective_Chelsea(xf, yf, xc, yc, xd, yd):
+    def single_pos_correction(x,y):
+    #    # Correct the area around the poles according to both poles
+    #    corrected_x = x*(x<0) + (0.871*x + 0.263*y)*(x>0)
+    #    corrected_y = y*(x<0) + (-.64*x + 1.05*y)*(x>0)
+        # Correct for the x-skew apparent from the first two poles
+        corrected_x = 1.03*x + 0.25*y
+        corrected_y = y
+        return (corrected_x, corrected_y)
+    (xf, yf) = single_pos_correction(xf, yf)
+    (xc, yc) = single_pos_correction(xc, yc)
+    (xd, yd) = single_pos_correction(xd, yd)
+    
+    # Scale up: 206 pixels to 2m
+    scale_factor = 2./206
+    new_coords = [coord*scale_factor for coord in [xf, yf, xc, yc, xd, yd]]
+    
+    return tuple(new_coords)
+    
+
+def perspective_Madonna(xf, yf, xc, yc, xd, yd):
+    # Correct for perspective in Madonna's video
+    size_correction = 1 + 20*yf/250 # THIS IS TOTALLY APPROXIMATE!!
+    # Approx pixels per m - ALSO TOTALLY APPROX
+    size_correction = size_correction/100.
+    new_coords = [coord*size_correction for coord in [xf, yf, xc, yc, xd, yd]]
+    return tuple(new_coords)
+    
 
 # 4. Get heights, widths, slopes, velocities, etc.
-def get_dims(dunes, params):
+def get_dims(dunes, params, correct_perspective):
     """Add dimension information to """
     # parameters is an object containing whatever parameters we will need here 
     for name in dunes.keys():
         dune = dunes[name]
         # Get t and each x and y series
         t = dune.position.index.values*params.steps2s
-#        xf = get_n(dune.position['Foot'], 0)
-#        yf = get_n(dune.position['Foot'], 1)
-#        xc = get_n(dune.position['Crest'], 0)
-#        yc = get_n(dune.position['Crest'], 1)
-#        xd = get_n(dune.position['Dwend'], 0)
-#        yd = get_n(dune.position['Dwend'], 1)
-        
         # KK version of madonna get_n code
         (xf, yf) = turn_pos_into_xy(dune.position, 'Foot')
         (xc, yc) = turn_pos_into_xy(dune.position, 'Crest')
         (xd, yd) = turn_pos_into_xy(dune.position, 'Dwend')
+        (xf, yf, xc, yc, xd, yd) = correct_perspective(xf, yf, xc, yc, xd, yd)
         
         dt = np.diff(t)
-        dx = np.diff(xc)
-        v = abs(dx/dt)
+        dx = np.diff(xf)
+        dy = np.diff(yf)
+        vx = dx/dt
+        vy = dy/dt
         dune.position['Height'] = yc-yf
+        for i, yc_i in enumerate(yc):
+          #  print yc[i] - yf[i]
+            if yc[i]-yf[i] < 0:
+                print "\n Dune with a negative height!"
+                print "Name : " + str(name)
+                print "ycrest: "+ str(yc[i])
+                
+                print("yfoot: {0}".format(yf[i]))
         dune.position['Width'] = xc-xd
         dune.position['Slope'] = (yc-yd)/(xc-xd)
         dune.position['Sbase'] = (yf-yd)/(xf-xd)
         dune.position['X'] = xc
         dune.position['Y'] = yf
-        dune.position['Velocity'] = np.insert(v, 0, np.nan)
+        dune.position['Velocity'] = np.insert(vx, 0, np.nan)
+        dune.position['YVelocity'] = np.insert(vy, 0, np.nan)
         dunes[name] = dune
     return dunes
 
@@ -365,6 +395,8 @@ def makeplot(var_x, var_y, label, dunes, params):
     """Make the actual plots from all dunes for var_x and var_y"""
     # Initialize plot
     plt.figure()
+    all_x = []
+    all_y = []
     # Iterate through dunes to fill in points
     for name in dunes.keys():
         df = dunes[name].position
@@ -374,25 +406,46 @@ def makeplot(var_x, var_y, label, dunes, params):
         # Plot the points
 #        plt.plot(x, y, '.-')    # For plotting lines for each dune with points
         plt.scatter(x, y, c=color, cmap='RdYlGn', vmin=0, vmax=1)
+       
+        new_x = np.asarray(x)
+        new_y = np.asarray(y)
+        for i in range(len(new_x)):
+            xi = new_x[i]
+            yi = new_y[i]
+            if np.isnan(xi) == False:
+                if np.isnan(yi) == False:
+                    all_x.append(xi)
+                    all_y.append(yi)
+    
+    z = np.polyfit(all_x, all_y, 1)
+    p = np.poly1d(z)
+    plt.plot(all_x, p(all_x), "k--")
+    iaprint "y=%.fx + (%.6f)"%(z[0],z[1])
+    
+    plt.plot(all_y, np.array(all_y)/0.788 , 'b--')
+    plt.xlim((0,0.3))
+    plt.ylim((0,0.8))
     # Add labels
     plt.xlabel(label[var_x])
     plt.ylabel(label[var_y])
     plt.title('{} vs. {}'.format(var_x, var_y))
-    plt.show()
+ 
     # Save the plot
     if params.saving_on:
         plt.savefig(params.test_name+var_x+var_y)
     # Close the plot
+    plt.show()
     plt.close()
 
 
 def plot_all(dunes, params):
     """Plot all combinations of variables"""
-    variables = ['X', 'Y', 'Height', 'Width', 'Slope', 'Sbase', 'Velocity']
+    variables = ['X', 'Y', 'Height', 'Width', 'Slope', 'Sbase', 'Velocity',
+                 'YVelocity']
     label = {'X': 'X, Crest position', 'Y': 'Y, Foot position',
              'Height': 'Height, Crest-Foot', 'Width': 'Width, Crest-Dwend',
              'Slope': 'Slope, Dwend to Crest', 'Sbase': 'Slope, Dwend to Foot',
-             'Velocity': 'Velocity, per second'}
+             'Velocity': 'Velocity, per second', 'YVelocity' : 'Y velocity'}
     i = 0
     n = 0
     for var in variables:
@@ -417,28 +470,30 @@ def get_test_parameters(params):
     test_name = params.test_name
     if test_name in ['240118', 'Chelsea']:
         # Method for reading data
-        read_data      = read_data_Chelsea
+        read_data           = read_data_Chelsea
+        correct_perspective = perspective_Chelsea
         # Parameters for timing, distance etc for this test
-        params.steps2s = 20
+        params.steps2s = 0.04038725
         # File with input data
         if params.istest:  params.fname   = 'testdata_012418.csv'
         else:              params.fname   = '180124_full.csv'
     elif test_name in ['170122', 'Madonna']:
-        read_data      = read_data_Madonna
+        read_data           = read_data_Madonna
+        correct_perspective = perspective_Madonna
         params.steps2s = 10
         if params.istest:  params.fname   = '170122AA_test.csv'
         else:              params.fname   = '170122AA_full.csv'
     else:
         print "That is not a valid testname."
         print "Valid names: 'Chelsea', 'Madonna', '240118', '170122'."
-    return (params, read_data)
+    return (params, read_data, correct_perspective)
 
 def main(params):
     # Read data from file
-    (params, read_data) = get_test_parameters(params)
+    (params, read_data, correct_perspective) = get_test_parameters(params)
     dunes = read_data(params.fname)
     # Add dimensions and velocities to dune structures
-    dunes = get_dims(dunes, params)
+    dunes = get_dims(dunes, params, correct_perspective)
     # Plot everything possible
     plot_all(dunes, params)
     return dunes
@@ -449,8 +504,8 @@ test_name = 'Chelsea'
 # Some parameters are set as a function of test name.
 params = Parameters(test_name)
 # True/False flag : run on test data set or whole data set?
-params.istest     = True
+params.istest     = False
 # Save the output figures?
-params.saving_on  = False
+params.saving_on  = True
 
 dunes = main(params)
