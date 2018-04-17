@@ -422,7 +422,7 @@ def get_test_parameters(params):
         params.steps2s = 20
         # File with input data
         if params.istest:  params.fname   = 'testdata_012418.csv'
-        else:              params.fname   = 'data012418.csv'
+        else:              params.fname   = '180124_full.csv'
     elif test_name in ['170122', 'Madonna']:
         read_data      = read_data_Madonna
         params.steps2s = 10
